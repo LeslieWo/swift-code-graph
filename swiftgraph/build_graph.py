@@ -148,9 +148,29 @@ def _parser_versions() -> dict[str, str]:
     return out
 
 
+def _source_revision(repo: Path) -> dict[str, str]:
+    """Record which commit of the source this graph was built from.
+
+    A graph is a snapshot, and nothing about looking at one tells you the code
+    has moved on since. Stamping the revision means you can answer "is this
+    stale?" by comparing against HEAD, instead of guessing from a timestamp.
+    """
+    import subprocess
+    try:
+        run = lambda *a: subprocess.run(  # noqa: E731
+            ["git", "-C", str(repo), *a],
+            capture_output=True, text=True, timeout=5, check=True).stdout.strip()
+        out = {"commit": run("rev-parse", "HEAD"),
+               "described": run("describe", "--always", "--dirty")}
+        return {k: v for k, v in out.items() if v}
+    except Exception:
+        return {}          # not a git repo, or no git; the graph is still valid
+
+
 def build(repo: Path):
     G = nx.DiGraph()
     G.graph["parser"] = _parser_versions()
+    G.graph["source"] = {"path": repo.name, **_source_revision(repo)}
     files = [f for f in sorted(repo.rglob("*.swift"))
              if "/." not in str(f) and not SKIP_DIRS & set(f.relative_to(repo).parts)]
     func_index = defaultdict(list)     # simple name -> [function node id]
@@ -233,15 +253,48 @@ def build(repo: Path):
                    calls_resolved=resolved, calls_unresolved=unresolved)
 
 
+def check_stale(repo: Path, graph_path: Path) -> int:
+    """Compare a built graph against the repo as it stands now.
+
+    A graph file gives no hint of its own age, so the honest failure mode is
+    reading a stale one and believing it. Exit code is 0 when current, 1 when
+    stale, so this can gate a script.
+    """
+    if not graph_path.exists():
+        print(f"{graph_path} does not exist yet")
+        return 1
+    stored = json.loads(graph_path.read_text()).get("graph", {}).get("source", {})
+    now = _source_revision(repo)
+    if not stored.get("commit") or not now.get("commit"):
+        print("no revision recorded (not a git repo?) -- cannot tell, rebuild to be safe")
+        return 1
+
+    print(f"graph built from: {stored.get('described', stored['commit'][:12])}")
+    print(f"repo is now at:   {now.get('described', now['commit'][:12])}")
+    if stored["commit"] != now["commit"]:
+        print("STALE -- the code moved on. Rebuild.")
+        return 1
+    if now.get("described", "").endswith("-dirty"):
+        print("same commit, but the working tree is dirty -- uncommitted edits are not in the graph.")
+        return 1
+    print("current.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="Build a code knowledge graph from a Swift repo.")
     ap.add_argument("repo", type=Path, help="path to the Swift source tree")
     ap.add_argument("-o", "--out", type=Path, default=Path("graph.json"))
+    ap.add_argument("--check", action="store_true",
+                    help="don't rebuild; report whether --out is stale vs the repo's HEAD")
     args = ap.parse_args()
 
     repo = args.repo.expanduser().resolve()
     if not repo.is_dir():
         ap.error(f"not a directory: {repo}")
+
+    if args.check:
+        raise SystemExit(check_stale(repo, args.out))
 
     G, stats = build(repo)
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -263,6 +316,8 @@ def main():
           f"{stats['calls_unresolved']} unresolved ({stats['call_sites']} call sites)")
     if G.graph.get("parser"):
         print("parsed by: " + ", ".join(f"{k} {v}" for k, v in G.graph["parser"].items()))
+    if G.graph.get("source", {}).get("described"):
+        print(f"source rev: {G.graph['source']['described']}")
 
     tables = sorted(d["label"] for _, d in G.nodes(data=True) if d["ntype"] == "Table")
     if tables:

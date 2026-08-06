@@ -51,6 +51,9 @@ swiftgraph-2d  graph.json --min-degree 3       # drop the long tail, keep the ba
 
 # 3. ask it something
 swiftgraph-query "what does the editor screen write to the database?"
+
+# is the graph still current?
+swiftgraph-build ~/code/MyApp --check -o graph.json
 ```
 
 Try it on the bundled example first:
@@ -66,6 +69,36 @@ same `graph.json`.
 
 In both views labels appear as you zoom in, the way Obsidian's graph behaves.
 Use the search box to jump to a symbol; everything that is not a neighbour dims out.
+
+## Keeping it honest
+
+A graph is a snapshot. Nothing about opening one tells you the code has moved on
+since, so two things guard against believing a stale or wrong picture.
+
+**Staleness.** Every `graph.json` records the commit it was built from, and
+`--check` compares that against the repo as it stands. It reports uncommitted
+work too, since edits you haven't committed are not in the graph either:
+
+```
+$ swiftgraph-build ~/code/MyApp --check -o graph.json
+graph built from: v1.1.8-b50-60-g72f0d34
+repo is now at:   v1.1.8-b50-73-ga91c2f1
+STALE -- the code moved on. Rebuild.
+```
+
+Exit code is 1 when stale, so it can gate a script.
+
+**Correctness.** `tests/` edits the bundled app, rebuilds, and asserts on the
+delta in *both* directions. The reverse is the one that matters: a graph that
+grows when you add code but never shrinks when you remove it looks right in every
+screenshot, and you find out months later when it reports a table nothing writes
+any more. The revert test was verified by deliberately injecting that bug -- a
+module-level cache accumulating tables across builds -- and confirming the suite
+caught it and nothing else.
+
+```bash
+uv run pytest
+```
 
 ## It scales
 

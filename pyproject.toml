@@ -15,6 +15,9 @@ dependencies = [
     "tree-sitter-language-pack>=1.8.1",
 ]
 
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
 [project.scripts]
 swiftgraph-build = "swiftgraph.build_graph:main"
 swiftgraph-2d = "swiftgraph.viz2d:main"
