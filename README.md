@@ -141,6 +141,12 @@ Stated plainly, because a graph you can't calibrate is a graph you shouldn't tru
   missing them. NetNewsWire is a good example: its schema lives in `.sql` files
   while the Swift side addresses tables through a generic table abstraction, so
   only the 7 tables named literally in Swift show up.
+- **The Swift grammar version changes the numbers.** Identical source parsed with
+  tree-sitter-language-pack 1.8.1 vs 1.14.3 yielded 8,803 vs 8,763 call sites on
+  the same app. Node and table counts held; call resolution shifted. Rather than
+  pin a version on everyone, each `graph.json` records what parsed it under
+  `graph.parser`, so two graphs that disagree can be explained instead of argued
+  about.
 - Test fixtures and stub files land in the graph unless their directory is in
   `SKIP_DIRS`.
 

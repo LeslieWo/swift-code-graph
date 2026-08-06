@@ -130,8 +130,27 @@ def find_tables(body: str) -> set[str]:
             if m.lower() not in SQL_NOISE}
 
 
+def _parser_versions() -> dict[str, str]:
+    """Record what actually parsed this graph.
+
+    The Swift grammar evolves, and a different grammar sees a different number of
+    call sites in identical source -- 8,803 vs 8,763 on the same app across two
+    environments here. Pinning would force a version on everyone; stamping it
+    means a graph that disagrees with yours can at least be explained.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+    out = {}
+    for pkg in ("tree-sitter", "tree-sitter-language-pack"):
+        try:
+            out[pkg] = version(pkg)
+        except PackageNotFoundError:
+            pass
+    return out
+
+
 def build(repo: Path):
     G = nx.DiGraph()
+    G.graph["parser"] = _parser_versions()
     files = [f for f in sorted(repo.rglob("*.swift"))
              if "/." not in str(f) and not SKIP_DIRS & set(f.relative_to(repo).parts)]
     func_index = defaultdict(list)     # simple name -> [function node id]
@@ -242,6 +261,8 @@ def main():
         print(f"  {c:5d}  {t}")
     print(f"\ncalls: {stats['calls_resolved']} resolved / "
           f"{stats['calls_unresolved']} unresolved ({stats['call_sites']} call sites)")
+    if G.graph.get("parser"):
+        print("parsed by: " + ", ".join(f"{k} {v}" for k, v in G.graph["parser"].items()))
 
     tables = sorted(d["label"] for _, d in G.nodes(data=True) if d["ntype"] == "Table")
     if tables:
