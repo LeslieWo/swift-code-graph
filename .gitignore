@@ -1,0 +1,14 @@
+__pycache__/
+*.py[oc]
+.venv/
+.python-version
+dist/
+build/
+*.egg-info
+
+# Generated output: rebuild with the CLI, never commit
+*.html
+graph.json
+lib/
+
+.DS_Store
