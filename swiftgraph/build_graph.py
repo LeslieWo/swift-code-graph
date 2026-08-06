@@ -50,8 +50,28 @@ DATA_SOURCES: list[tuple[str, re.Pattern]] = [
     ("coredata",        re.compile(r'entity(?:ForName|Name):\s*"([^"]+)"')),
     ("coredata-fetch",  re.compile(r'NSFetchRequest<\s*([A-Za-z_][A-Za-z0-9_]*)')),
     ("realm",           re.compile(r'realm\.objects\(\s*([A-Za-z_][A-Za-z0-9_]*)\.self')),
-    ("raw-sql",         re.compile(r'\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)', re.I)),
+    # SQL rules require the keyword and the table name inside the *same* string
+    # literal ([^"]* never crosses a quote). A bare /\bFROM\s+(\w+)/i looks
+    # equivalent and is not: it happily reads English prose, and on a real
+    # codebase it turned comments like "copied from Marco" and "read from disk"
+    # into tables named Marco and disk.
+    ("sql-select",      re.compile(r'"[^"]*\bSELECT\b[^"]*\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)', re.I)),
+    ("sql-insert",      re.compile(r'"[^"]*\bINSERT\s+(?:or\s+\w+\s+)?INTO\s+([A-Za-z_][A-Za-z0-9_]*)', re.I)),
+    # UPDATE must be followed by SET, or every "Update your credentials" string
+    # in the UI copy donates a table called `your`.
+    ("sql-update",      re.compile(r'"[^"]*\bUPDATE\s+([A-Za-z_][A-Za-z0-9_]*)\s+SET\b', re.I)),
+    ("sql-delete",      re.compile(r'"[^"]*\bDELETE\s+FROM\s+([A-Za-z_][A-Za-z0-9_]*)', re.I)),
+    ("sql-create",      re.compile(r'"[^"]*\bCREATE\s+TABLE\s+(?:if\s+not\s+exists\s+)?([A-Za-z_][A-Za-z0-9_]*)', re.I)),
 ]
+
+# Words that are never a table, however well they match. Swift codebases build
+# SQL with string interpolation -- `CREATE TABLE IF NOT EXISTS \(tableName)` --
+# and when the real name is a \(...) the regex backtracks and captures the
+# keyword instead. Those tables cannot be recovered statically; the honest
+# outcome is to drop them rather than invent a table called `IF`.
+SQL_NOISE = {"if", "not", "set", "exists", "into", "from", "table", "select",
+             "where", "values", "on", "conflict", "do", "or", "and", "null",
+             "temporary", "temp", "unique", "index"}
 
 # Tells a write from a read. Deliberately loose: on a data-flow graph, a false
 # "writes" is far less misleading than quietly calling a mutation a read.
@@ -106,7 +126,8 @@ def conforms_list(src, n):
 
 
 def find_tables(body: str) -> set[str]:
-    return {m for _, pat in DATA_SOURCES for m in pat.findall(body)}
+    return {m for _, pat in DATA_SOURCES for m in pat.findall(body)
+            if m.lower() not in SQL_NOISE}
 
 
 def build(repo: Path):

@@ -150,7 +150,19 @@ search.addEventListener('input', () => {
   const q = search.value.trim().toLowerCase();
   hits.innerHTML = '';
   if (q.length < 2) return;
-  DATA.nodes.filter(n => n.name.toLowerCase().includes(q)).slice(0, 12).forEach(n => {
+  // Rank, don't just filter. Searching a table name on a real app otherwise
+  // buries the table under every function whose name happens to contain it.
+  const rank = n => {
+    const name = n.name.toLowerCase();
+    const how = name === q ? 0 : name.startsWith(q) ? 1 : 2;
+    const what = n.ntype === 'Table' ? 0 : n.ntype === 'Type' ? 1 : 2;
+    return how * 10 + what;
+  };
+  DATA.nodes
+    .filter(n => n.name.toLowerCase().includes(q))
+    .sort((a, b) => rank(a) - rank(b) || a.name.length - b.name.length)
+    .slice(0, 12)
+    .forEach(n => {
     const d = document.createElement('div');
     d.className = 'hit';
     d.innerHTML = `<span class="sw" style="background:${n.color}"></span>${n.name}

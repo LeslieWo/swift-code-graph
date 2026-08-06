@@ -10,6 +10,12 @@ a path like this becomes something you can see and traverse:
 NoteEditorView.save --calls--> NoteStore.saveNote --writes--> (table) notes
 ```
 
+![The articles table in NetNewsWire, with every function that reads or writes it](docs/hero-table-focus.jpg)
+
+*[NetNewsWire](https://github.com/Ranchero-Software/NetNewsWire) (689 Swift files,
+7,413 nodes): the `articles` table selected, with the 17 functions that touch it
+lit up and everything else dimmed.*
+
 ## Why this exists
 
 If you write Swift, the usual code-graph tools are not available to you.
@@ -60,6 +66,20 @@ same `graph.json`.
 
 In both views labels appear as you zoom in, the way Obsidian's graph behaves.
 Use the search box to jump to a symbol; everything that is not a neighbour dims out.
+
+## It scales
+
+![7413-node overview](docs/overview-7413-nodes.jpg)
+
+NetNewsWire's 689 Swift files produce 7,413 nodes and 23,624 edges. Layout takes
+about two minutes to precompute once; the page then opens in seconds and stays
+interactive, because nothing is being simulated in your browser.
+
+The bundled example is at the other end of the scale, and layout, node size, and
+edge weight all follow node count -- a 33-node graph shouldn't render as dust
+scattered across an empty void:
+
+![DemoApp graph](docs/demo-app.jpg)
 
 ## What ends up in the graph
 
@@ -115,6 +135,12 @@ Stated plainly, because a graph you can't calibrate is a graph you shouldn't tru
   create|set` in the function body marks the edge `writes`. Deliberately loose:
   on a data-flow graph, a false "writes" misleads less than a mutation quietly
   labelled a read.
+- **Interpolated table names cannot be recovered.** Plenty of Swift apps build
+  SQL as `"CREATE TABLE IF NOT EXISTS \(tableName)"` and pass the name in as a
+  variable. There is no static answer for those, and the graph will simply be
+  missing them. NetNewsWire is a good example: its schema lives in `.sql` files
+  while the Swift side addresses tables through a generic table abstraction, so
+  only the 7 tables named literally in Swift show up.
 - Test fixtures and stub files land in the graph unless their directory is in
   `SKIP_DIRS`.
 
@@ -145,6 +171,26 @@ lying to you or melting a laptop:
   render loop — blank canvas, nodes without coordinates, no obvious cause.
 - **`zoomToFit()` depends on render timing.** One frame early and the camera ends
   up *inside* the point cloud.
+
+### One more, from testing on a real codebase
+
+The first run against NetNewsWire reported **76 tables**, including `Macworld`,
+`whatever`, `the`, and `easily`. The culprit was a reasonable-looking rule:
+
+```python
+("raw-sql", re.compile(r'\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)', re.I))
+```
+
+Case-insensitive `FROM` matches English prose. Comments like *"copied from Marco"*
+and *"read from disk"* became tables. Two further rounds were needed: requiring
+the SQL keyword and the table name to sit inside the **same string literal**
+(`[^"]*` never crosses a quote), then requiring `UPDATE` to be followed by `SET`
+— otherwise every *"Update your credentials"* string in the UI copy donates a
+table called `your`. 76 -> 19 -> 7, and all 7 are real.
+
+Worth stating plainly: a heuristic that looks fine on the codebase you wrote it
+for can be almost entirely noise on someone else's. This is the argument for
+running any rule change against an unfamiliar repo before shipping it.
 
 ## Stack
 
