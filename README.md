@@ -33,7 +33,7 @@ edges pointing at them.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/swift-code-graph
+git clone https://github.com/LeslieWo/swift-code-graph
 cd swift-code-graph
 uv pip install -e .          # or: pip install -e .
 ```
